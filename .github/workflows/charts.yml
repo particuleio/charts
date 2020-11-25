@@ -17,7 +17,7 @@ jobs:
       uses: actions/checkout@v2
 
     - name: 'charts:asdf:install'
-      uses: asdf-vm/actions/install@v1.0.0
+      uses: asdf-vm/actions/install@v1.0.1
 
     - name: 'charts:lint'
       run: helm lint charts/*
