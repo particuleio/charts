@@ -1,0 +1,58 @@
+name: 'charts'
+
+on:
+  push:
+    branches:
+    - main
+    paths:
+    - 'charts/**'
+  pull_request:
+
+jobs:
+  charts:
+    name: 'charts'
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+
+    - name: 'charts:asdf:install'
+      uses: asdf-vm/actions/install@v1.0.0
+
+    - name: 'charts:lint'
+      run: helm lint charts/*
+
+    - name: 'charts:package'
+      run: helm package -d dist charts/*
+
+    - name: 'charts:index'
+      run: helm repo index --url https://particuleio.github.io/charts/ .
+      working-directory: dist
+
+    - name: 'charts:gh-pages'
+      uses: JamesIves/github-pages-deploy-action@releases/v3
+      with:
+        ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        BRANCH: gh-pages
+        FOLDER: dist
+      if: github.ref == 'refs/heads/main'
+
+    - name: 'charts:success'
+      if: success()
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      uses: voxmedia/github-action-slack-notify-build@v1
+      with:
+        channel: notifications
+        status: SUCCESS
+        color: good
+
+    - name: 'charts:failure'
+      if: failure()
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      uses: voxmedia/github-action-slack-notify-build@v1
+      with:
+        channel: notifications
+        status: failure
+        color: danger
