@@ -12,7 +12,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "scaleway-webhook.fullname" . }}:secrets-reader
+  name: {{ include "scaleway-webhook.fullname" . }}-secret-reader
   namespace: {{ .Release.Namespace }}
   labels:
     app: {{ include "scaleway-webhook.name" . }}
@@ -31,7 +31,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "scaleway-webhook.fullname" . }}:secrets-reader
+  name: {{ include "scaleway-webhook.fullname" . }}-secret-reader
   namespace: {{ .Release.Namespace }}
   labels:
     app: {{ include "scaleway-webhook.name" . }}
@@ -41,7 +41,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "scaleway-webhook.fullname" . }}:secrets-reader
+  name: {{ include "scaleway-webhook.fullname" . }}-secret-reader
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
@@ -54,7 +54,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "scaleway-webhook.fullname" . }}:webhook-authentication-reader
+  name: {{ include "scaleway-webhook.fullname" . }}-webhook-authentication-reader
   namespace: kube-system
   labels:
     app: {{ include "scaleway-webhook.name" . }}
@@ -76,7 +76,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "scaleway-webhook.fullname" . }}:auth-delegator
+  name: {{ include "scaleway-webhook.fullname" . }}-auth-delegator
   labels:
     app: {{ include "scaleway-webhook.name" . }}
     chart: {{ include "scaleway-webhook.chart" . }}
@@ -96,7 +96,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "scaleway-webhook.fullname" . }}:domain-solver
+  name: {{ include "scaleway-webhook.fullname" . }}-domain-solver
   labels:
     app: {{ include "scaleway-webhook.name" . }}
     chart: {{ include "scaleway-webhook.chart" . }}
@@ -113,7 +113,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "scaleway-webhook.fullname" . }}:domain-solver
+  name: {{ include "scaleway-webhook.fullname" . }}-domain-solver
   labels:
     app: {{ include "scaleway-webhook.name" . }}
     chart: {{ include "scaleway-webhook.chart" . }}
@@ -122,7 +122,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "scaleway-webhook.fullname" . }}:domain-solver
+  name: {{ include "scaleway-webhook.fullname" . }}-domain-solver
 subjects:
   - apiGroup: ""
     kind: ServiceAccount
