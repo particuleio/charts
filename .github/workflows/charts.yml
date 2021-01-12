@@ -4,6 +4,8 @@ on:
   push:
     branches:
     - main
+    paths:
+    - 'charts/**'
   pull_request:
 
 jobs:
@@ -22,28 +24,11 @@ jobs:
     - name: 'charts:particule'
       run: |
         helm lint charts/*
-        helm package -d dist charts/*
 
-    - name: 'charts:aws-ebs-csi-driver'
-      run: |
-        helm lint aws-ebs-csi-driver/charts/*
-        helm package -d dist aws-ebs-csi-driver/charts/*
-
-    - name: 'charts:istio'
-      run: |
-        helm lint istio/manifests/charts/istio-{operator,cni}
-        helm package -d dist istio/manifests/charts/istio-{operator,cni}
-
-    - name: 'charts:index'
-      run: helm repo index --url https://particuleio.github.io/charts/ .
-      working-directory: dist
-
-    - name: 'charts:gh-pages'
-      uses: JamesIves/github-pages-deploy-action@releases/v3
-      with:
-        ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-        BRANCH: gh-pages
-        FOLDER: dist
+    - name: Run chart-releaser
+      uses: helm/chart-releaser-action@v1.1.0
+      env:
+        CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       if: github.ref == 'refs/heads/main'
 
     - name: 'charts:success'
@@ -52,7 +37,7 @@ jobs:
         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       uses: voxmedia/github-action-slack-notify-build@v1
       with:
-        channel: notifications
+        channel: ${{ secrets.SLACK_CHANNEL }}
         status: SUCCESS
         color: good
 
@@ -62,6 +47,6 @@ jobs:
         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       uses: voxmedia/github-action-slack-notify-build@v1
       with:
-        channel: notifications
+        channel: ${{ secrets.SLACK_CHANNEL }}
         status: failure
         color: danger
