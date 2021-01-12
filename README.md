@@ -7,7 +7,7 @@
 ## Usage
 
 ```console
-helm repo add https://particuleio.github.io/charts
+helm repo add particuleio https://particuleio.github.io/charts
 helm repo update
 ```
 
