@@ -17,6 +17,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         submodules: 'true'
+        fetch-depth: 0
 
     - name: 'charts:asdf:install'
       uses: asdf-vm/actions/install@v1.1.0
