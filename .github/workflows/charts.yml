@@ -19,14 +19,18 @@ jobs:
         submodules: 'true'
         fetch-depth: 0
 
+    - name: 'charts:git'
+      run: |
+        git config user.name "$GITHUB_ACTOR"
+        git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
     - name: 'charts:asdf:install'
       uses: asdf-vm/actions/install@v1.1.0
 
     - name: 'charts:particule'
-      run: |
-        helm lint charts/*
+      run: helm lint charts/*
 
-    - name: Run chart-releaser
+    - name: 'charts:releaser'
       uses: helm/chart-releaser-action@v1.1.0
       env:
         CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
