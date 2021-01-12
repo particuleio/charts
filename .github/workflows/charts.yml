@@ -19,14 +19,6 @@ jobs:
     - name: 'charts:asdf:install'
       uses: asdf-vm/actions/install@v1.1.0
 
-    - name: 'charts:python:install'
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.7
-
-    - name: 'charts:testing'
-      uses: helm/chart-testing-action@v2.0.1
-
     - name: 'charts:particule'
       run: |
         helm lint charts/*
