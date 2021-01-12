@@ -1,5 +1,28 @@
 apiVersion: v1
 entries:
+  aws-ebs-csi-driver:
+  - apiVersion: v1
+    appVersion: 0.8.1
+    created: "2021-01-12T16:56:11.602866119Z"
+    description: A Helm chart for AWS EBS CSI Driver
+    digest: 93ebb92cb733aff2dd4d579c2f8d330af3cb8a3d55f9b6a34ee95b2275ce13fe
+    home: https://github.com/kubernetes-sigs/aws-ebs-csi-driver
+    keywords:
+    - aws
+    - ebs
+    - csi
+    kubeVersion: '>=1.14.0-0'
+    maintainers:
+    - email: chengpan@amazon.com
+      name: leakingtapan
+    - name: krmichel
+      url: https://github.com/krmichel
+    name: aws-ebs-csi-driver
+    sources:
+    - https://github.com/kubernetes-sigs/aws-ebs-csi-driver
+    urls:
+    - https://github.com/particuleio/charts/releases/download/aws-ebs-csi-driver-0.8.1/aws-ebs-csi-driver-0.8.1.tgz
+    version: 0.8.1
   dex:
   - apiVersion: v1
     appVersion: 2.24.0
@@ -32,6 +55,36 @@ entries:
     urls:
     - https://github.com/particuleio/charts/releases/download/gangway-0.4.5/gangway-0.4.5.tgz
     version: 0.4.5
+  istio-cni:
+  - apiVersion: v1
+    created: "2021-01-12T16:56:11.728302152Z"
+    description: Helm chart for istio-cni components
+    digest: 03f2094901510c78a8588738d3b0d412640f0d82f817e716a02a48ad1c0fb870
+    icon: https://istio.io/latest/favicons/android-192x192.png
+    keywords:
+    - istio-cni
+    - istio
+    name: istio-cni
+    sources:
+    - http://github.com/istio/cni
+    urls:
+    - https://github.com/particuleio/charts/releases/download/istio-cni-1.1.0/istio-cni-1.1.0.tgz
+    version: 1.1.0
+  istio-operator:
+  - apiVersion: v1
+    created: "2021-01-12T16:56:11.852203979Z"
+    description: Helm chart for deploying Istio operator
+    digest: 4d0dd521cb0ef044b2594b772e66d89377f0b8df3ca73476f66aa2036ab165b1
+    icon: https://istio.io/latest/favicons/android-192x192.png
+    keywords:
+    - istio
+    - operator
+    name: istio-operator
+    sources:
+    - https://github.com/istio/istio/tree/master/operator
+    urls:
+    - https://github.com/particuleio/charts/releases/download/istio-operator-1.7.0/istio-operator-1.7.0.tgz
+    version: 1.7.0
   oauth2-proxy:
   - apiVersion: v1
     appVersion: 5.1.0
