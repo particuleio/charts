@@ -2,7 +2,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "scaleway-webhook.name" -}}
+{{- define "gangway.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
@@ -11,7 +11,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "scaleway-webhook.fullname" -}}
+{{- define "gangway.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -27,23 +27,6 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "scaleway-webhook.chart" -}}
+{{- define "gangway.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
-
-{{- define "scaleway-webhook.selfSignedIssuer" -}}
-{{ printf "%s-selfsign" (include "scaleway-webhook.fullname" .) }}
-{{- end -}}
-
-{{- define "scaleway-webhook.rootCAIssuer" -}}
-{{ printf "%s-ca" (include "scaleway-webhook.fullname" .) }}
-{{- end -}}
-
-{{- define "scaleway-webhook.rootCACertificate" -}}
-{{ printf "%s-ca" (include "scaleway-webhook.fullname" .) }}
-{{- end -}}
-
-{{- define "scaleway-webhook.servingCertificate" -}}
-{{ printf "%s-webhook-tls" (include "scaleway-webhook.fullname" .) }}
-{{- end -}}
-

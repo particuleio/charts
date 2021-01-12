@@ -1,0 +1,12 @@
+[submodule "aws-ebs-csi-driver"]
+	path = aws-ebs-csi-driver
+	url = https://github.com/kubernetes-sigs/aws-ebs-csi-driver.git
+[submodule "cert-manager-webhook-scaleway"]
+	path = cert-manager-webhook-scaleway
+	url = https://github.com/scaleway/cert-manager-webhook-scaleway.git
+[submodule "deprecated"]
+	path = deprecated
+	url = https://github.com/helm/charts.git
+[submodule "istio"]
+	path = istio
+	url = https://github.com/istio/istio.git
