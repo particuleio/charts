@@ -28,42 +28,10 @@ jobs:
     - name: 'charts:particule'
       run: helm lint charts/*
 
-    - name: 'charts:aws-ebs-csi-driver'
-      run: helm lint aws-ebs-csi-driver/charts/*
-
-    - name: 'charts:istio'
-      run: |-
-        helm lint istio/manifests/charts/istio-cni
-        helm lint istio/manifests/charts/istio-operator
-
     - name: 'charts:releaser'
       uses: helm/chart-releaser-action@v1.1.0
       env:
         CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      if: github.ref == 'refs/heads/main'
-
-    - name: 'charts:releaser:aws-ebs-csi-driver'
-      uses: helm/chart-releaser-action@v1.1.0
-      env:
-        CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      with:
-        charts_dir: aws-ebs-csi-driver/charts
-      if: github.ref == 'refs/heads/main'
-
-    - name: 'charts:releaser:istio-cni'
-      uses: helm/chart-releaser-action@v1.1.0
-      env:
-        CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      with:
-        charts_dir: istio/manifests/charts/istio-cni
-      if: github.ref == 'refs/heads/main'
-
-    - name: 'charts:releaser:istio-operator'
-      uses: helm/chart-releaser-action@v1.1.0
-      env:
-        CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      with:
-        charts_dir: istio/manifests/charts/istio-operator
       if: github.ref == 'refs/heads/main'
 
     - name: 'charts:success'
