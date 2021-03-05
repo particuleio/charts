@@ -19,7 +19,7 @@
 
 set -ex
 
-HUB="${HUB:?specify a hub}"
+HUBS="${HUBS:?specify a space seperated list of hubs}"
 TAG="${TAG:?specify a tag}"
 
 # For multi architecture building:

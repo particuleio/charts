@@ -212,7 +212,7 @@ func (wh *Webhook) Run(stop <-chan struct{}) {
 		select {
 		case <-healthC:
 			content := []byte(`ok`)
-			if err := ioutil.WriteFile(wh.healthCheckFile, content, 0644); err != nil {
+			if err := ioutil.WriteFile(wh.healthCheckFile, content, 0o644); err != nil {
 				log.Errorf("Health check update of %q failed: %v", wh.healthCheckFile, err)
 			}
 		case <-stop:
@@ -606,9 +606,7 @@ func applyMetadata(pod *corev1.Pod, injectedPodData corev1.Pod, req InjectionPar
 // reorderPod ensures containers are properly ordered after merging
 func reorderPod(pod *corev1.Pod, req InjectionParameters) error {
 	var merr error
-	mc := &meshconfig.MeshConfig{
-		DefaultConfig: &meshconfig.ProxyConfig{},
-	}
+	mc := req.meshConfig
 	// Get copy of pod proxyconfig, to determine container ordering
 	if pca, f := req.pod.ObjectMeta.GetAnnotations()[annotation.ProxyConfig.Name]; f {
 		mc, merr = mesh.ApplyProxyConfig(pca, *req.meshConfig)
@@ -622,7 +620,7 @@ func reorderPod(pod *corev1.Pod, req InjectionParameters) error {
 		return fmt.Errorf("could not parse configuration values: %v", err)
 	}
 	// nolint: staticcheck
-	holdPod := mc.DefaultConfig.HoldApplicationUntilProxyStarts.GetValue() ||
+	holdPod := mc.GetDefaultConfig().GetHoldApplicationUntilProxyStarts().GetValue() ||
 		valuesStruct.GetGlobal().GetProxy().GetHoldApplicationUntilProxyStarts().GetValue()
 
 	proxyLocation := MoveLast
