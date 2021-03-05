@@ -110,13 +110,15 @@ If your cluster is v1.14+, you can skip this step. Install the `CSINodeInfo` CRD
 ```sh
 kubectl create -f https://raw.githubusercontent.com/kubernetes/csi-api/release-1.13/pkg/crd/manifests/csinodeinfo.yaml
 ```
+#### Config node toleration settings
+By default, driver can be deployed on any nodes, to have driver tolerate taint `CriticalAddonsOnly`, please set helm `Value.node.tolerateAllTaints` and `Value.tolerateAllTaints` to false before deployment
 
 #### Deploy driver
 Please see the compatibility matrix above before you deploy the driver
 
 If you want to deploy the stable driver without alpha features:
 ```sh
-kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-0.8"
+kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-0.9"
 ```
 
 If you want to deploy the driver with alpha features:
