@@ -26,7 +26,7 @@ import (
 	goversion "github.com/hashicorp/go-version"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
-	client_v1beta1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1"
+	client_v1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 
@@ -479,7 +479,7 @@ func (client *Client) GetIstioVersions(namespace string) ([]ComponentVersion, er
 			if pv == "" {
 				pv = cv
 			} else if pv != cv {
-				err := fmt.Errorf("differrent versions of containers in the same pod: %v", pod.Name)
+				err := fmt.Errorf("different versions of containers in the same pod: %v", pod.Name)
 				errs = util.AppendErr(errs, err)
 			}
 		}
@@ -547,7 +547,7 @@ func (client *Client) ConfigMapForSelector(namespace, labelSelector string) (*v1
 }
 
 func (client *Client) CheckUnsupportedAlphaSecurityCRD() error {
-	c, err := client_v1beta1.NewForConfig(client.Config)
+	c, err := client_v1.NewForConfig(client.Config)
 	if err != nil {
 		return err
 	}

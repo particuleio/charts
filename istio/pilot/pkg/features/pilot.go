@@ -97,21 +97,6 @@ var (
 		"Enables the use of HTTP 1.0 in the outbound HTTP listeners, to support legacy applications.",
 	).Get()
 
-	initialFetchTimeoutVar = env.RegisterDurationVar(
-		"PILOT_INITIAL_FETCH_TIMEOUT",
-		0,
-		"Specifies the initial_fetch_timeout for config. If this time is reached without "+
-			"a response to the config requested by Envoy, the Envoy will move on with the init phase. "+
-			"This prevents envoy from getting stuck waiting on config during startup.",
-	)
-	InitialFetchTimeout = func() *duration.Duration {
-		timeout, f := initialFetchTimeoutVar.Lookup()
-		if !f {
-			return nil
-		}
-		return ptypes.DurationProto(timeout)
-	}()
-
 	TerminationDrainDuration = env.RegisterIntVar(
 		"TERMINATION_DRAIN_DURATION_SECONDS",
 		5,
@@ -200,6 +185,13 @@ var (
 			"if headless services have a large number of pods.",
 	).Get()
 
+	EnableRemoteJwks = env.RegisterBoolVar(
+		"PILOT_JWT_ENABLE_REMOTE_JWKS",
+		false,
+		"If enabled, checks to see if the configured JwksUri in RequestAuthentication is a mesh cluster URL "+
+			"and configures Remote Jwks to let Envoy fetch the Jwks instead of Istiod.",
+	).Get()
+
 	EnableEDSForHeadless = env.RegisterBoolVar(
 		"PILOT_ENABLE_EDS_FOR_HEADLESS_SERVICES",
 		false,
@@ -234,14 +226,6 @@ var (
 		true,
 		"If enabled, Istiod will serve SDS for credentialName secrets (rather than in-proxy). "+
 			"To ensure proper security, PILOT_ENABLE_XDS_IDENTITY_CHECK=true is required as well.",
-	).Get()
-
-	EnableCRDValidation = env.RegisterBoolVar(
-		"PILOT_ENABLE_CRD_VALIDATION",
-		false,
-		"If enabled, pilot will validate CRDs while retrieving CRDs from kubernetes cache."+
-			"Use this flag to enable validation of CRDs in Pilot, especially in deployments "+
-			"that do not have galley installed.",
 	).Get()
 
 	EnableAnalysis = env.RegisterBoolVar(
@@ -295,8 +279,8 @@ var (
 	}()
 
 	EnableServiceApis = env.RegisterBoolVar("PILOT_ENABLED_SERVICE_APIS", true,
-		"If this is set to true, support for Kubernetes service-apis (github.com/kubernetes-sigs/service-apis) will "+
-			" be enabled. In addition to this being enabled, the service-apis CRDs need to be installed.").Get()
+		"If this is set to true, support for Kubernetes gateway-api (github.com/kubernetes-sigs/gateway-api) will "+
+			" be enabled. In addition to this being enabled, the gateway-api CRDs need to be installed.").Get()
 
 	EnableVirtualServiceDelegate = env.RegisterBoolVar(
 		"PILOT_ENABLE_VIRTUAL_SERVICE_DELEGATE",
@@ -352,7 +336,7 @@ var (
 		"If true, Pilot will collect metrics for XDS cache efficiency.").Get()
 
 	XDSCacheMaxSize = env.RegisterIntVar("PILOT_XDS_CACHE_SIZE", 20000,
-		"The maximum number of cache entries for the XDS cache. If the size is <= 0, the cache will have no upper bound.").Get()
+		"The maximum number of cache entries for the XDS cache.").Get()
 
 	AllowMetadataCertsInMutualTLS = env.RegisterBoolVar("PILOT_ALLOW_METADATA_CERTS_DR_MUTUAL_TLS", false,
 		"If true, Pilot will allow certs specified in Metadata to override DR certs in MUTUAL TLS mode. "+
@@ -365,9 +349,6 @@ var (
 	EnableLegacyFSGroupInjection = env.RegisterBoolVar("ENABLE_LEGACY_FSGROUP_INJECTION", JwtPolicy.Get() != jwt.PolicyFirstParty,
 		"If true, Istiod will set the pod fsGroup to 1337 on injection. This is required for Kubernetes 1.18 and older "+
 			`(see https://github.com/kubernetes/kubernetes/issues/57923 for details) unless JWT_POLICY is "first-party-jwt".`).Get()
-
-	EnableTLSv2OnInboundPath = env.RegisterBoolVar("PILOT_SIDECAR_ENABLE_INBOUND_TLS_V2", true,
-		"If true, Pilot will set the TLS version on server side as TLSv1_2 and also enforce strong cipher suites").Get()
 
 	XdsPushSendTimeout = env.RegisterDurationVar(
 		"PILOT_XDS_SEND_TIMEOUT",
@@ -423,4 +404,33 @@ var (
 	WasmRemoteLoadConversion = env.RegisterBoolVar("ISTIO_AGENT_ENABLE_WASM_REMOTE_LOAD_CONVERSION", true,
 		"If enabled, Istio agent will intercept ECDS resource update, downloads Wasm module, "+
 			"and replaces Wasm module remote load with downloaded local module file.").Get()
+
+	PilotJwtPubKeyRefreshInterval = env.RegisterDurationVar(
+		"PILOT_JWT_PUB_KEY_REFRESH_INTERVAL",
+		20*time.Minute,
+		"The interval for istiod to fetch the jwks_uri for the jwks public key.",
+	).Get()
+
+	EnableInboundPassthrough = env.RegisterBoolVar(
+		"PILOT_ENABLE_INBOUND_PASSTHROUGH",
+		true,
+		"If enabled, inbound clusters will be configured as ORIGINAL_DST clusters. When disabled, "+
+			"requests are always sent to localhost. The primary implication of this is that when enabled, binding to POD_IP "+
+			"will work while localhost will not; when disable, bind to POD_IP will not work, while localhost will. "+
+			"The enabled behavior matches the behavior without Istio enabled at all; this flag exists only for backwards compatibility. "+
+			"Regardless of this setting, the configuration can be overridden with the Sidecar.Ingress.DefaultEndpoint configuration.",
+	).Get()
+
+	StripHostPort = env.RegisterBoolVar("ISTIO_GATEWAY_STRIP_HOST_PORT", false,
+		"If enabled, Gateway will remove any port from host/authority header "+
+			"before any processing of request by HTTP filters or routing.").Get()
+
+	// EnableUnsafeAssertions enables runtime checks to test assertions in our code. This should never be enabled in
+	// production; when assertions fail Istio will panic.
+	EnableUnsafeAssertions = env.RegisterBoolVar(
+		"PILOT_ENABLE_UNSAFE_RUNTIME_ASSERTIONS",
+		false,
+		"If enabled, addition runtime asserts will be performed. "+
+			"These checks are both expensive and panic on failure. As a result, this should be used only for testing.",
+	).Get()
 )

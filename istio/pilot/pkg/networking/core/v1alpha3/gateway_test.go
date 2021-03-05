@@ -30,6 +30,7 @@ import (
 
 	meshconfig "istio.io/api/mesh/v1alpha1"
 	networking "istio.io/api/networking/v1alpha3"
+	"istio.io/istio/pilot/pkg/features"
 	pilot_model "istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/plugin"
 	"istio.io/istio/pilot/pkg/networking/util"
@@ -562,6 +563,7 @@ func TestBuildGatewayListenerTlsContext(t *testing.T) {
 }
 
 func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
+	var stripPortMode *hcm.HttpConnectionManager_StripAnyHostPort
 	testCases := []struct {
 		name        string
 		node        *pilot_model.Proxy
@@ -599,6 +601,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						HttpProtocolOptions: &core.Http1ProtocolOptions{
 							AcceptHttp_10: true,
 						},
+						StripPortMode: stripPortMode,
 					},
 				},
 			},
@@ -688,6 +691,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						},
 						ServerName:          EnvoyServerName,
 						HttpProtocolOptions: &core.Http1ProtocolOptions{},
+						StripPortMode:       stripPortMode,
 					},
 				},
 			},
@@ -777,6 +781,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						},
 						ServerName:          EnvoyServerName,
 						HttpProtocolOptions: &core.Http1ProtocolOptions{},
+						StripPortMode:       stripPortMode,
 					},
 				},
 			},
@@ -866,6 +871,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						},
 						ServerName:          EnvoyServerName,
 						HttpProtocolOptions: &core.Http1ProtocolOptions{},
+						StripPortMode:       stripPortMode,
 					},
 				},
 			},
@@ -900,6 +906,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						},
 						ServerName:          EnvoyServerName,
 						HttpProtocolOptions: &core.Http1ProtocolOptions{},
+						StripPortMode:       stripPortMode,
 					},
 				},
 			},
@@ -994,6 +1001,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						},
 						ServerName:          EnvoyServerName,
 						HttpProtocolOptions: &core.Http1ProtocolOptions{},
+						StripPortMode:       stripPortMode,
 					},
 				},
 			},
@@ -1089,6 +1097,7 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 						},
 						ServerName:          EnvoyServerName,
 						HttpProtocolOptions: &core.Http1ProtocolOptions{},
+						StripPortMode:       stripPortMode,
 					},
 					statPrefix: "server1",
 				},
@@ -1099,10 +1108,10 @@ func TestCreateGatewayHTTPFilterChainOpts(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cgi := NewConfigGenerator([]plugin.Plugin{}, &pilot_model.DisabledCache{})
-			tc.node.MergedGateway = &pilot_model.MergedGateway{SNIHostsByServer: map[*networking.Server][]string{
-				tc.server: pilot_model.GetSNIHostsForServer(tc.server),
+			tc.node.MergedGateway = &pilot_model.MergedGateway{TLSServerInfo: map[*networking.Server]*pilot_model.TLSServerInfo{
+				tc.server: {SNIHosts: pilot_model.GetSNIHostsForServer(tc.server)},
 			}}
-			ret := cgi.createGatewayHTTPFilterChainOpts(tc.node, tc.server, tc.routeName, tc.proxyConfig)
+			ret := cgi.createGatewayHTTPFilterChainOpts(tc.node, tc.server.Port, tc.server, tc.routeName, tc.proxyConfig)
 			if diff := cmp.Diff(tc.result.tlsContext, ret.tlsContext, protocmp.Transform()); diff != "" {
 				t.Errorf("got diff in tls context: %v", diff)
 			}
@@ -1243,19 +1252,25 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 		},
 	}
 	cases := []struct {
-		name                 string
-		virtualServices      []config.Config
-		gateways             []config.Config
-		routeName            string
-		expectedVirtualHosts map[string][]string
-		expectedHTTPRoutes   map[string]int
-		redirect             bool
+		name                              string
+		virtualServices                   []config.Config
+		gateways                          []config.Config
+		routeName                         string
+		expectedVirtualHosts              map[string][]string
+		expectedVirtualHostsHostPortStrip map[string][]string
+		expectedHTTPRoutes                map[string]int
+		redirect                          bool
 	}{
 		{
 			"404 when no services",
 			[]config.Config{},
 			[]config.Config{httpGateway},
 			"http.80",
+			map[string][]string{
+				"blackhole:80": {
+					"*",
+				},
+			},
 			map[string][]string{
 				"blackhole:80": {
 					"*",
@@ -1274,6 +1289,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 					"example.org", "example.org:*",
 				},
 			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
+			},
 			// We will setup a VHost which just redirects; no routes
 			map[string]int{"example.org:80": 0},
 			true,
@@ -1288,6 +1306,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 					"example.org", "example.org:*",
 				},
 			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
+			},
 			map[string]int{"example.org:80": 1},
 			true,
 		},
@@ -1300,6 +1321,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 				"example.org:80": {
 					"example.org", "example.org:*",
 				},
+			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
 			},
 			map[string]int{"example.org:80": 4},
 			true,
@@ -1314,6 +1338,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 					"example.org", "example.org:*",
 				},
 			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
+			},
 			map[string]int{"example.org:80": 4},
 			true,
 		},
@@ -1326,6 +1353,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 				"example.org:80": {
 					"example.org", "example.org:*",
 				},
+			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
 			},
 			map[string]int{"example.org:80": 2},
 			true,
@@ -1340,6 +1370,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 					"example.org", "example.org:*",
 				},
 			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
+			},
 			map[string]int{"example.org:80": 2},
 			true,
 		},
@@ -1352,6 +1385,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 				"example.org:80": {
 					"example.org", "example.org:*",
 				},
+			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
 			},
 			map[string]int{"example.org:80": 1},
 			false,
@@ -1366,6 +1402,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 					"example.org", "example.org:*",
 				},
 			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
+			},
 			map[string]int{"example.org:80": 2},
 			false,
 		},
@@ -1379,6 +1418,9 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 					"example.org", "example.org:*",
 				},
 			},
+			map[string][]string{
+				"example.org:80": {"example.org"},
+			},
 			map[string]int{"example.org:80": 2},
 			false,
 		},
@@ -1388,45 +1430,57 @@ func TestGatewayHTTPRouteConfig(t *testing.T) {
 			[]config.Config{httpGatewayWildcard},
 			"http.80",
 			map[string][]string{
-				"*.org:80": {
-					"*.org", "*.org:80",
-				},
+				"*.org:80": {"*.org", "*.org:80"},
+			},
+			map[string][]string{
+				"*.org:80": {"*.org"},
 			},
 			map[string]int{"*.org:80": 1},
 			false,
 		},
 	}
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			cfgs := tt.gateways
-			cfgs = append(cfgs, tt.virtualServices...)
-			cg := NewConfigGenTest(t, TestOptions{
-				Configs: cfgs,
-			})
-			r := cg.ConfigGen.buildGatewayHTTPRouteConfig(cg.SetupProxy(&proxyGateway), cg.PushContext(), tt.routeName)
-			if r == nil {
-				t.Fatal("got an empty route configuration")
-			}
-			vh := make(map[string][]string)
-			hr := make(map[string]int)
-			for _, h := range r.VirtualHosts {
-				vh[h.Name] = h.Domains
-				hr[h.Name] = len(h.Routes)
-				if h.Name != "blackhole:80" && !h.IncludeRequestAttemptCount {
-					t.Errorf("expected attempt count to be set in virtual host, but not found")
-				}
-				if tt.redirect != (h.RequireTls == route.VirtualHost_ALL) {
-					t.Errorf("expected redirect %v, got %v", tt.redirect, h.RequireTls)
-				}
-			}
 
-			if !reflect.DeepEqual(tt.expectedVirtualHosts, vh) {
-				t.Errorf("got unexpected virtual hosts. Expected: %v, Got: %v", tt.expectedVirtualHosts, vh)
-			}
-			if !reflect.DeepEqual(tt.expectedHTTPRoutes, hr) {
-				t.Errorf("got unexpected number of http routes. Expected: %v, Got: %v", tt.expectedHTTPRoutes, hr)
-			}
-		})
+	StripHostPort := []bool{false, true}
+	for _, value := range StripHostPort {
+		features.StripHostPort = value
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				cfgs := tt.gateways
+				cfgs = append(cfgs, tt.virtualServices...)
+				cg := NewConfigGenTest(t, TestOptions{
+					Configs: cfgs,
+				})
+				r := cg.ConfigGen.buildGatewayHTTPRouteConfig(cg.SetupProxy(&proxyGateway), cg.PushContext(), tt.routeName)
+				if r == nil {
+					t.Fatal("got an empty route configuration")
+				}
+				vh := make(map[string][]string)
+				hr := make(map[string]int)
+				for _, h := range r.VirtualHosts {
+					vh[h.Name] = h.Domains
+					hr[h.Name] = len(h.Routes)
+					if h.Name != "blackhole:80" && !h.IncludeRequestAttemptCount {
+						t.Errorf("expected attempt count to be set in virtual host, but not found")
+					}
+					if tt.redirect != (h.RequireTls == route.VirtualHost_ALL) {
+						t.Errorf("expected redirect %v, got %v", tt.redirect, h.RequireTls)
+					}
+				}
+
+				if features.StripHostPort {
+					if !reflect.DeepEqual(tt.expectedVirtualHostsHostPortStrip, vh) {
+						t.Errorf("got unexpected virtual hosts. Expected: %v, Got: %v", tt.expectedVirtualHostsHostPortStrip, vh)
+					}
+				} else {
+					if !reflect.DeepEqual(tt.expectedVirtualHosts, vh) {
+						t.Errorf("got unexpected virtual hosts. Expected: %v, Got: %v", tt.expectedVirtualHosts, vh)
+					}
+				}
+				if !reflect.DeepEqual(tt.expectedHTTPRoutes, hr) {
+					t.Errorf("got unexpected number of http routes. Expected: %v, Got: %v", tt.expectedHTTPRoutes, hr)
+				}
+			})
+		}
 	}
 }
 
@@ -1531,7 +1585,7 @@ func TestBuildGatewayListeners(t *testing.T) {
 		sort.Strings(listeners)
 		sort.Strings(tt.expectedListeners)
 		if !reflect.DeepEqual(listeners, tt.expectedListeners) {
-			t.Fatalf("Expected listeners: %v, got: %v\n%v", tt.expectedListeners, listeners, proxyGateway.MergedGateway.Servers)
+			t.Fatalf("Expected listeners: %v, got: %v\n%v", tt.expectedListeners, listeners, proxyGateway.MergedGateway.MergedServers)
 		}
 		xdstest.ValidateListeners(t, builder.gatewayListeners)
 	}

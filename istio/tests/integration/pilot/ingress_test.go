@@ -24,9 +24,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"istio.io/istio/pkg/config/protocol"
+	"istio.io/istio/pkg/test/echo/common/scheme"
 	"istio.io/istio/pkg/test/framework"
 	"istio.io/istio/pkg/test/framework/components/echo"
 	"istio.io/istio/pkg/test/framework/components/environment/kube"
+	"istio.io/istio/pkg/test/framework/components/namespace"
 	"istio.io/istio/pkg/test/util/retry"
 	ingressutil "istio.io/istio/tests/integration/security/sds_ingress/util"
 )
@@ -87,6 +89,31 @@ spec:
   - forwardTo:
      - serviceName: b
        port: 80
+---
+apiVersion: networking.x-k8s.io/v1alpha1
+kind: HTTPRoute
+metadata:
+  name: b
+spec:
+  gateways:
+    allow: FromList
+    gatewayRefs:
+      - name: mesh
+        namespace: istio-system
+  hostnames: ["b"]
+  rules:
+  - matches:
+    - path:
+        type: Prefix
+        value: /path
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        add:
+          my-added-header: added-value
+    forwardTo:
+    - serviceName: b
+      port: 80
 `)
 
 			ctx.NewSubTest("http").Run(func(ctx framework.TestContext) {
@@ -114,6 +141,14 @@ spec:
 						"Host": {"my.domain.example"},
 					},
 					Validator: echo.ExpectOK(),
+				})
+			})
+			ctx.NewSubTest("mesh").Run(func(ctx framework.TestContext) {
+				_ = apps.PodA[0].CallWithRetryOrFail(ctx, echo.CallOptions{
+					Target:    apps.PodB[0],
+					PortName:  "http",
+					Path:      "/path",
+					Validator: echo.And(echo.ExpectOK(), echo.ExpectKey("My-Added-Header", "added-value")),
 				})
 			})
 		})
@@ -258,7 +293,7 @@ spec:
 
 			ctx.NewSubTest("status").Run(func(ctx framework.TestContext) {
 				if !ctx.Environment().(*kube.Environment).Settings().LoadBalancerSupported {
-					t.Skip("ingress status not supported without load balancer")
+					ctx.Skip("ingress status not supported without load balancer")
 				}
 
 				ip := apps.Ingress.HTTPAddress().IP.String()
@@ -343,5 +378,89 @@ spec:
 					apps.Ingress.CallEchoWithRetryOrFail(ctx, c.call, retry.Timeout(time.Minute))
 				})
 			}
+		})
+}
+
+// TestCustomGateway deploys a simple gateway deployment, that is fully injected, and verifies it can startup and send traffic
+func TestCustomGateway(t *testing.T) {
+	framework.
+		NewTest(t).
+		Features("traffic.ingress.custom").
+		Run(func(ctx framework.TestContext) {
+			gatewayNs := namespace.NewOrFail(t, ctx, namespace.Config{Prefix: "custom-gateway"})
+			injectLabel := `sidecar.istio.io/inject: "true"`
+			if len(ctx.Settings().Revision) > 0 {
+				injectLabel = fmt.Sprintf(`istio.io/rev: "%v"`, ctx.Settings().Revision)
+			}
+			ctx.Config().ApplyYAMLOrFail(t, gatewayNs.Name(), fmt.Sprintf(`apiVersion: v1
+kind: Service
+metadata:
+  name: custom-gateway
+  labels:
+    istio: custom
+spec:
+  ports:
+  - port: 80
+    name: http
+  selector:
+    istio: custom
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: custom-gateway
+spec:
+  selector:
+    matchLabels:
+      istio: custom
+  template:
+    metadata:
+      annotations:
+        inject.istio.io/templates: gateway
+      labels:
+        istio: custom
+        %v
+    spec:
+      containers:
+      - name: istio-proxy
+        image: auto
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: app
+spec:
+  selector:
+    istio: custom
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: app
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - app
+  http:
+  - route:
+    - destination:
+        host: %s
+        port:
+          number: 80
+`, injectLabel, apps.PodA[0].Config().FQDN()))
+			apps.PodB[0].CallWithRetryOrFail(t, echo.CallOptions{
+				Port:      &echo.Port{ServicePort: 80},
+				Scheme:    scheme.HTTP,
+				Address:   fmt.Sprintf("custom-gateway.%s.svc.cluster.local", gatewayNs.Name()),
+				Validator: echo.ExpectOK(),
+			})
 		})
 }

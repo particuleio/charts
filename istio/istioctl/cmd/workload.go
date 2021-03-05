@@ -389,7 +389,7 @@ func createMeshConfig(kubeClient kube.ExtendedClient, wg *clientv1alpha3.Workloa
 	istioCM := "istio"
 	// Case with multiple control planes
 	revision := kubeClient.Revision()
-	if revision != "" {
+	if revision != "" && revision != "default" {
 		istioCM = fmt.Sprintf("%s-%s", istioCM, revision)
 	}
 	istio, err := kubeClient.CoreV1().ConfigMaps(istioNamespace).Get(context.Background(), istioCM, metav1.GetOptions{})
@@ -440,6 +440,9 @@ func createMeshConfig(kubeClient kube.ExtendedClient, wg *clientv1alpha3.Workloa
 	meshConfig.DefaultConfig.ReadinessProbe = wg.Spec.Probe
 
 	md := meshConfig.DefaultConfig.ProxyMetadata
+	if md == nil {
+		md = map[string]string{}
+	}
 	md["CANONICAL_SERVICE"], md["CANONICAL_REVISION"] = inject.ExtractCanonicalServiceLabels(labels, wg.Name)
 	md["POD_NAMESPACE"] = wg.Namespace
 	md["SERVICE_ACCOUNT"] = we.ServiceAccount
@@ -511,7 +514,7 @@ func createHosts(kubeClient kube.ExtendedClient, ingressIP, dir string) error {
 	var hosts string
 	istiod := "istiod"
 	revision := kubeClient.Revision()
-	if revision != "" {
+	if revision != "" && revision != "default" {
 		istiod = fmt.Sprintf("%s-%s", istiod, revision)
 	}
 	if ingressIP != "" {

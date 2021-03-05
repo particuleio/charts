@@ -146,7 +146,8 @@ var ignoredCRDs = []string{
 	"/v1/Secret",
 	"/v1/Service",
 	"/v1/ConfigMap",
-	"apiextensions.k8s.io/v1beta1/CustomResourceDefinition",
+	"apiextensions.k8s.io/v1/CustomResourceDefinition",
+	"admissionregistration.k8s.io/v1/MutatingWebhookConfiguration",
 	"apps/v1/Deployment",
 	"extensions/v1beta1/Ingress",
 }

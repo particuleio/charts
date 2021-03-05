@@ -21,10 +21,10 @@ import (
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	"github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes/duration"
 	"github.com/golang/protobuf/ptypes/wrappers"
 
 	networking "istio.io/api/networking/v1alpha3"
-	"istio.io/istio/pilot/pkg/features"
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/networking/util"
 	"istio.io/istio/pkg/config"
@@ -137,7 +137,10 @@ func (cb *ClusterBuilder) applyDestinationRule(c *cluster.Cluster, clusterMode C
 
 		maybeApplyEdsConfig(subsetCluster)
 
-		subsetCluster.Metadata = util.AddSubsetToMetadata(clusterMetadata, subset.Name)
+		// Add the DestinationRule+subsets metadata. Metadata here is generated on a per-cluster
+		// basis in buildDefaultCluster, so we can just insert without a copy.
+		subsetCluster.Metadata = util.AddConfigInfoMetadata(subsetCluster.Metadata, destRule.Meta)
+		util.AddSubsetToMetadata(subsetCluster.Metadata, subset.Name)
 		subsetClusters = append(subsetClusters, subsetCluster)
 	}
 	return subsetClusters
@@ -256,13 +259,22 @@ func (cb *ClusterBuilder) buildDefaultCluster(name string, discoveryType cluster
 // requires a single protocol per port, and the DestinationRule issue is slated to move to Sidecar.
 // Note: clusterPort and instance.Endpoint.EndpointPort are identical for standard Services; however,
 // Sidecar.Ingress allows these to be different.
-func (cb *ClusterBuilder) buildInboundClusterForPortOrUDS(proxy *model.Proxy, clusterPort int, bind string,
+func (cb *ClusterBuilder) buildInboundClusterForPortOrUDS(clusterPort int, bind string,
 	instance *model.ServiceInstance, allInstance []*model.ServiceInstance) *cluster.Cluster {
-	clusterName := util.BuildInboundSubsetKey(proxy, instance.ServicePort.Name,
-		instance.Service.Hostname, instance.ServicePort.Port, clusterPort)
+	clusterName := model.BuildInboundSubsetKey(clusterPort)
 	localityLbEndpoints := buildInboundLocalityLbEndpoints(bind, instance.Endpoint.EndpointPort)
-	localCluster := cb.buildDefaultCluster(clusterName, cluster.Cluster_STATIC, localityLbEndpoints,
+	clusterType := cluster.Cluster_ORIGINAL_DST
+	if len(localityLbEndpoints) > 0 {
+		clusterType = cluster.Cluster_STATIC
+	}
+	localCluster := cb.buildDefaultCluster(clusterName, clusterType, localityLbEndpoints,
 		model.TrafficDirectionInbound, instance.ServicePort, instance.Service, allInstance)
+	if clusterType == cluster.Cluster_ORIGINAL_DST {
+		// Extend cleanupInterval beyond 5s default. This ensures that upstream connections will stay
+		// open for up to 60s. With the default of 5s, we may tear things down too quickly for
+		// infrequently accessed services.
+		localCluster.CleanupInterval = &duration.Duration{Seconds: 60}
+	}
 	// If stat name is configured, build the alt statname.
 	if len(cb.push.Mesh.InboundClusterStatName) != 0 {
 		localCluster.AltStatName = util.BuildStatPrefix(cb.push.Mesh.InboundClusterStatName,
@@ -284,6 +296,18 @@ func (cb *ClusterBuilder) buildInboundClusterForPortOrUDS(proxy *model.Proxy, cl
 			// upstream TLS settings/outlier detection/load balancer don't apply here.
 			applyConnectionPool(cb.push.Mesh, localCluster, connectionPool)
 			util.AddConfigInfoMetadata(localCluster.Metadata, cfg.Meta)
+		}
+	}
+	if bind != LocalhostAddress && bind != LocalhostIPv6Address {
+		// iptables will redirect our own traffic to localhost back to us if we do not use the "magic" upstream bind
+		// config which will be skipped.
+		localCluster.UpstreamBindConfig = &core.BindConfig{
+			SourceAddress: &core.SocketAddress{
+				Address: getPassthroughBindIP(cb.proxy),
+				PortSpecifier: &core.SocketAddress_PortValue{
+					PortValue: uint32(0),
+				},
+			},
 		}
 	}
 	return localCluster
@@ -329,7 +353,7 @@ func (cb *ClusterBuilder) buildLocalityLbEndpoints(proxyNetworkView map[string]b
 			ep.LoadBalancingWeight.Value = instance.Endpoint.LbWeight
 		}
 		ep.Metadata = util.BuildLbEndpointMetadata(instance.Endpoint.Network, instance.Endpoint.TLSMode, instance.Endpoint.WorkloadName,
-			instance.Endpoint.Namespace, instance.Endpoint.Labels)
+			instance.Endpoint.Namespace, instance.Endpoint.Locality.ClusterID, instance.Endpoint.Labels)
 		locality := instance.Endpoint.Locality.Label
 		lbEndpoints[locality] = append(lbEndpoints[locality], ep)
 	}
@@ -460,8 +484,7 @@ func maybeApplyEdsConfig(c *cluster.Cluster) {
 			ConfigSourceSpecifier: &core.ConfigSource_Ads{
 				Ads: &core.AggregatedConfigSource{},
 			},
-			ResourceApiVersion:  core.ApiVersion_V3,
-			InitialFetchTimeout: features.InitialFetchTimeout,
+			ResourceApiVersion: core.ApiVersion_V3,
 		},
 	}
 }

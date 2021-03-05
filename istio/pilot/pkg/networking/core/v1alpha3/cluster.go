@@ -50,24 +50,15 @@ const (
 	DefaultLbType = networking.LoadBalancerSettings_ROUND_ROBIN
 )
 
-var (
-	// defaultTransportSocketMatch applies to endpoints that have no security.istio.io/tlsMode label
-	// or those whose label value does not match "istio"
-	defaultTransportSocketMatch = &cluster.Cluster_TransportSocketMatch{
-		Name:  "tlsMode-disabled",
-		Match: &structpb.Struct{},
-		TransportSocket: &core.TransportSocket{
-			Name: util.EnvoyRawBufferSocketName,
-		},
-	}
-
-	// nolint: lll
-	// envoy outlier detection default max ejection time
-	// https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/outlier_detection.proto#envoy-v3-api-field-config-cluster-v3-outlierdetection-max-ejection-time
-	defaultMaxEjectionTime = &types.Duration{
-		Seconds: 300,
-	}
-)
+// defaultTransportSocketMatch applies to endpoints that have no security.istio.io/tlsMode label
+// or those whose label value does not match "istio"
+var defaultTransportSocketMatch = &cluster.Cluster_TransportSocketMatch{
+	Name:  "tlsMode-disabled",
+	Match: &structpb.Struct{},
+	TransportSocket: &core.TransportSocket{
+		Name: util.EnvoyRawBufferSocketName,
+	},
+}
 
 // getDefaultCircuitBreakerThresholds returns a copy of the default circuit breaker thresholds for the given traffic direction.
 func getDefaultCircuitBreakerThresholds() *cluster.CircuitBreakers_Thresholds {
@@ -100,20 +91,20 @@ func (configgen *ConfigGeneratorImpl) BuildClusters(proxy *model.Proxy, push *mo
 		outboundPatcher := clusterPatcher{envoyFilterPatches, networking.EnvoyFilter_SIDECAR_OUTBOUND}
 		clusters = append(clusters, configgen.buildOutboundClusters(cb, outboundPatcher)...)
 		// Add a blackhole and passthrough cluster for catching traffic to unresolved routes
-		clusters = outboundPatcher.conditionallyAppend(clusters, cb.buildBlackHoleCluster(), cb.buildDefaultPassthroughCluster())
+		clusters = outboundPatcher.conditionallyAppend(clusters, nil, cb.buildBlackHoleCluster(), cb.buildDefaultPassthroughCluster())
 		clusters = append(clusters, outboundPatcher.insertedClusters()...)
 
 		// Setup inbound clusters
 		inboundPatcher := clusterPatcher{envoyFilterPatches, networking.EnvoyFilter_SIDECAR_INBOUND}
 		clusters = append(clusters, configgen.buildInboundClusters(cb, instances, inboundPatcher)...)
 		// Pass through clusters for inbound traffic. These cluster bind loopback-ish src address to access node local service.
-		clusters = inboundPatcher.conditionallyAppend(clusters, cb.buildInboundPassthroughClusters()...)
+		clusters = inboundPatcher.conditionallyAppend(clusters, nil, cb.buildInboundPassthroughClusters()...)
 		clusters = append(clusters, inboundPatcher.insertedClusters()...)
 	default: // Gateways
 		patcher := clusterPatcher{envoyFilterPatches, networking.EnvoyFilter_GATEWAY}
 		clusters = append(clusters, configgen.buildOutboundClusters(cb, patcher)...)
 		// Gateways do not require the default passthrough cluster as they do not have original dst listeners.
-		clusters = patcher.conditionallyAppend(clusters, cb.buildBlackHoleCluster())
+		clusters = patcher.conditionallyAppend(clusters, nil, cb.buildBlackHoleCluster())
 		if proxy.Type == model.Router && proxy.GetRouterMode() == model.SniDnatRouter {
 			clusters = append(clusters, configgen.buildOutboundSniDnatClusters(proxy, push, patcher)...)
 		}
@@ -175,8 +166,8 @@ func (configgen *ConfigGeneratorImpl) buildOutboundClusters(cb *ClusterBuilder, 
 
 			subsetClusters := cb.applyDestinationRule(defaultCluster, DefaultClusterMode, service, port, networkView)
 
-			clusters = cp.conditionallyAppend(clusters, defaultCluster)
-			clusters = cp.conditionallyAppend(clusters, subsetClusters...)
+			clusters = cp.conditionallyAppend(clusters, nil, defaultCluster)
+			clusters = cp.conditionallyAppend(clusters, nil, subsetClusters...)
 		}
 	}
 
@@ -190,10 +181,10 @@ type clusterPatcher struct {
 	pctx networking.EnvoyFilter_PatchContext
 }
 
-func (p clusterPatcher) conditionallyAppend(l []*cluster.Cluster, clusters ...*cluster.Cluster) []*cluster.Cluster {
+func (p clusterPatcher) conditionallyAppend(l []*cluster.Cluster, hosts []host.Name, clusters ...*cluster.Cluster) []*cluster.Cluster {
 	for _, c := range clusters {
-		if envoyfilter.ShouldKeepCluster(p.pctx, p.efw, c) {
-			l = append(l, envoyfilter.ApplyClusterMerge(p.pctx, p.efw, c))
+		if envoyfilter.ShouldKeepCluster(p.pctx, p.efw, c, hosts) {
+			l = append(l, envoyfilter.ApplyClusterMerge(p.pctx, p.efw, c, hosts))
 		}
 	}
 	return l
@@ -231,8 +222,8 @@ func (configgen *ConfigGeneratorImpl) buildOutboundSniDnatClusters(proxy *model.
 				continue
 			}
 			subsetClusters := cb.applyDestinationRule(defaultCluster, SniDnatClusterMode, service, port, networkView)
-			clusters = cp.conditionallyAppend(clusters, defaultCluster)
-			clusters = cp.conditionallyAppend(clusters, subsetClusters...)
+			clusters = cp.conditionallyAppend(clusters, nil, defaultCluster)
+			clusters = cp.conditionallyAppend(clusters, nil, subsetClusters...)
 		}
 	}
 
@@ -240,6 +231,9 @@ func (configgen *ConfigGeneratorImpl) buildOutboundSniDnatClusters(proxy *model.
 }
 
 func buildInboundLocalityLbEndpoints(bind string, port uint32) []*endpoint.LocalityLbEndpoints {
+	if bind == "" {
+		return nil
+	}
 	address := util.BuildAddress(bind, port)
 	lbEndpoint := &endpoint.LbEndpoint{
 		HostIdentifier: &endpoint.LbEndpoint_Endpoint{
@@ -290,19 +284,24 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(cb *ClusterBuilder, i
 			// However, we still need to capture all the instances on this port, as its required to populate telemetry metadata
 			// The first instance will be used as the "primary" instance; this means if we have an conflicts between
 			// Services the first one wins
-			ep := instance.ServicePort.Port
-			if util.IsIstioVersionGE181(cb.proxy) {
-				// Istio 1.8.1+ switched to keying on EndpointPort. We need both logics in place to support smooth upgrade from 1.8.0 to 1.8.x
-				ep = int(instance.Endpoint.EndpointPort)
-			}
+			ep := int(instance.Endpoint.EndpointPort)
 			clustersToBuild[ep] = append(clustersToBuild[ep], instance)
 		}
 
+		bind := actualLocalHost
+		if features.EnableInboundPassthrough {
+			bind = ""
+		}
 		// For each workload port, we will construct a cluster
 		for _, instances := range clustersToBuild {
 			instance := instances[0]
-			localCluster := cb.buildInboundClusterForPortOrUDS(cb.proxy, int(instance.Endpoint.EndpointPort), actualLocalHost, instance, instances)
-			clusters = cp.conditionallyAppend(clusters, localCluster)
+			localCluster := cb.buildInboundClusterForPortOrUDS(int(instance.Endpoint.EndpointPort), bind, instance, instances)
+			// If inbound cluster match has service, we should see if it matches with any host name across all instances.
+			var hosts []host.Name
+			for _, si := range instances {
+				hosts = append(hosts, si.Service.Hostname)
+			}
+			clusters = cp.conditionallyAppend(clusters, hosts, localCluster)
 		}
 		return clusters
 	}
@@ -316,28 +315,30 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(cb *ClusterBuilder, i
 			Name:     ingressListener.Port.Name,
 		}
 
-		// When building an inbound cluster for the ingress listener, we take the defaultEndpoint specified
-		// by the user and parse it into host:port or a unix domain socket
-		// The default endpoint can be 127.0.0.1:port or :port or unix domain socket
-		endpointAddress := actualLocalHost
+		// Set up the endpoint. By default, we set this empty which will use ORIGINAL_DST passthrough.
+		// This can be overridden by ingress.defaultEndpoint.
+		// * 127.0.0.1: send to localhost
+		// * 0.0.0.0: send to INSTANCE_IP
+		// * unix:///...: send to configured unix domain socket
+		endpointAddress := ""
 		port := 0
-		var err error
-		instanceIPCluster := false
 		if strings.HasPrefix(ingressListener.DefaultEndpoint, model.UnixAddressPrefix) {
 			// this is a UDS endpoint. assign it as is
 			endpointAddress = ingressListener.DefaultEndpoint
-		} else {
+		} else if len(ingressListener.DefaultEndpoint) > 0 {
 			// parse the ip, port. Validation guarantees presence of :
 			parts := strings.Split(ingressListener.DefaultEndpoint, ":")
 			if len(parts) < 2 {
 				continue
 			}
+			var err error
 			if port, err = strconv.Atoi(parts[1]); err != nil {
 				continue
 			}
 			if parts[0] == model.PodIPAddressPrefix {
 				endpointAddress = cb.proxy.IPAddresses[0]
-				instanceIPCluster = true
+			} else if parts[0] == model.LocalhostAddressPrefix {
+				endpointAddress = actualLocalHost
 			}
 		}
 
@@ -350,21 +351,8 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(cb *ClusterBuilder, i
 		instance.Endpoint.ServicePortName = listenPort.Name
 		instance.Endpoint.EndpointPort = uint32(port)
 
-		localCluster := cb.buildInboundClusterForPortOrUDS(nil, int(ingressListener.Port.Number), endpointAddress, instance, nil)
-		if instanceIPCluster {
-			// IPTables will redirect our own traffic back to us if we do not use the "magic" upstream bind
-			// config which will be skipped. This mirrors the "passthrough" clusters.
-			// TODO: consider moving all clusters to use this for consistency.
-			localCluster.UpstreamBindConfig = &core.BindConfig{
-				SourceAddress: &core.SocketAddress{
-					Address: util.InboundPassthroughBindIpv4,
-					PortSpecifier: &core.SocketAddress_PortValue{
-						PortValue: uint32(0),
-					},
-				},
-			}
-		}
-		clusters = cp.conditionallyAppend(clusters, localCluster)
+		localCluster := cb.buildInboundClusterForPortOrUDS(int(ingressListener.Port.Number), endpointAddress, instance, nil)
+		clusters = cp.conditionallyAppend(clusters, []host.Name{instance.Service.Hostname}, localCluster)
 	}
 
 	return clusters
@@ -616,6 +604,9 @@ func applyTrafficPolicy(opts buildClusterOpts) {
 		applyOutlierDetection(opts.cluster, outlierDetection)
 		applyLoadBalancer(opts.cluster, loadBalancer, opts.port, opts.proxy, opts.mesh)
 	}
+	if opts.cluster.GetType() == cluster.Cluster_ORIGINAL_DST {
+		opts.cluster.LbPolicy = cluster.Cluster_CLUSTER_PROVIDED
+	}
 
 	if opts.clusterMode != SniDnatClusterMode && opts.direction != model.TrafficDirectionInbound {
 		autoMTLSEnabled := opts.mesh.GetEnableAutoMtls().Value
@@ -754,9 +745,6 @@ func applyOutlierDetection(c *cluster.Cluster, outlier *networking.OutlierDetect
 	}
 	if outlier.BaseEjectionTime != nil {
 		out.BaseEjectionTime = gogo.DurationToProtoDuration(outlier.BaseEjectionTime)
-		if outlier.BaseEjectionTime.Compare(defaultMaxEjectionTime) > 0 {
-			out.MaxEjectionTime = out.BaseEjectionTime
-		}
 	}
 	if outlier.MaxEjectionPercent > 0 {
 		out.MaxEjectionPercent = &wrappers.UInt32Value{Value: uint32(outlier.MaxEjectionPercent)}
@@ -794,9 +782,7 @@ func applyLoadBalancer(c *cluster.Cluster, lb *networking.LoadBalancerSettings, 
 	// and port is named as redis-xxx we end up creating a cluster with type Original DST and LbPolicy as MAGLEV which would be
 	// rejected by Envoy.
 
-	// Original destination service discovery must be used with the original destination load balancer.
 	if c.GetType() == cluster.Cluster_ORIGINAL_DST {
-		c.LbPolicy = cluster.Cluster_CLUSTER_PROVIDED
 		return
 	}
 
